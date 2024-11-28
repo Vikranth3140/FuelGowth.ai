@@ -6,6 +6,7 @@ from sklearn.cluster import DBSCAN
 from urllib.request import urlretrieve
 import os
 import matplotlib.pyplot as plt
+import uuid
 
 # Step 1: Download Video from URL
 def download_video(video_url, output_dir="videos"):
@@ -30,14 +31,16 @@ def extract_frames(video_path, frame_rate=30):
     return frames
 
 # Step 3: Save Detected Faces to Directory
-def save_faces(frame, face_locations, output_dir="Plots", influencer_id=None):
-    """Save faces detected in a frame to a specified directory."""
+def save_faces(frame, face_locations, output_dir="Plots", influencer_id=None, frame_number=None):
+    """Save faces detected in a frame to a specified directory with unique filenames."""
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
     for idx, (top, right, bottom, left) in enumerate(face_locations):
         face = frame[top:bottom, left:right]
-        filename = f"influencer_{influencer_id if influencer_id is not None else idx}.png"
+        # Generate a unique filename for each face
+        unique_id = uuid.uuid4().hex  # Unique identifier
+        filename = f"influencer_{influencer_id if influencer_id is not None else idx}_{frame_number}_{unique_id}.png"
         filepath = os.path.join(output_dir, filename)
         cv2.imwrite(filepath, cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
         print(f"Saved face to {filepath}")
