@@ -29,27 +29,29 @@ def extract_frames(video_path, frame_rate=30):
     video.release()
     return frames
 
-# Step 3: Display Detected Faces
-def display_faces(frame, face_locations, influencer_id=None):
-    """Display or save faces detected in a frame."""
+# Step 3: Save Detected Faces to Directory
+def save_faces(frame, face_locations, output_dir="Plots", influencer_id=None):
+    """Save faces detected in a frame to a specified directory."""
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     for idx, (top, right, bottom, left) in enumerate(face_locations):
         face = frame[top:bottom, left:right]
-        plt.imshow(face[:, :, ::-1])  # Convert BGR to RGB for display
-        title = f"Influencer {influencer_id if influencer_id is not None else idx}"
-        plt.title(title)
-        plt.axis("off")
-        plt.show()
+        filename = f"influencer_{influencer_id if influencer_id is not None else idx}.png"
+        filepath = os.path.join(output_dir, filename)
+        cv2.imwrite(filepath, cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
+        print(f"Saved face to {filepath}")
 
-# Step 4: Detect Faces and Generate Embeddings
-def detect_faces_and_embeddings(frames):
+# Step 4: Detect Faces and Save Embeddings
+def detect_faces_and_embeddings(frames, output_dir="Plots"):
     embeddings = []
     for frame in frames:
         face_locations = face_recognition.face_locations(frame)
         face_encodings = face_recognition.face_encodings(frame, face_locations)
         embeddings.extend(face_encodings)
 
-        # Display detected faces
-        display_faces(frame, face_locations)
+        # Save detected faces
+        save_faces(frame, face_locations, output_dir)
     return embeddings
 
 # Step 5: Cluster Faces to Identify Unique Influencers
@@ -104,7 +106,7 @@ def calculate_influencer_performance(video_to_clusters, video_performance):
 
     return influencer_performance
 
-# Main Script
+# Main Script to Process videos and extract unique influencers
 if __name__ == "__main__":
     # Load video URLs and performance data
     data = pd.read_csv("dataset/data.csv")
