@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.cluster import DBSCAN
 from urllib.request import urlretrieve
 import os
+import matplotlib.pyplot as plt
 
 # Step 1: Download Video from URL
 def download_video(video_url, output_dir="videos"):
@@ -28,22 +29,36 @@ def extract_frames(video_path, frame_rate=30):
     video.release()
     return frames
 
-# Step 3: Detect Faces in Frames and Generate Embeddings
+# Step 3: Display Detected Faces
+def display_faces(frame, face_locations, influencer_id=None):
+    """Display or save faces detected in a frame."""
+    for idx, (top, right, bottom, left) in enumerate(face_locations):
+        face = frame[top:bottom, left:right]
+        plt.imshow(face[:, :, ::-1])  # Convert BGR to RGB for display
+        title = f"Influencer {influencer_id if influencer_id is not None else idx}"
+        plt.title(title)
+        plt.axis("off")
+        plt.show()
+
+# Step 4: Detect Faces and Generate Embeddings
 def detect_faces_and_embeddings(frames):
     embeddings = []
     for frame in frames:
         face_locations = face_recognition.face_locations(frame)
         face_encodings = face_recognition.face_encodings(frame, face_locations)
         embeddings.extend(face_encodings)
+
+        # Display detected faces
+        display_faces(frame, face_locations)
     return embeddings
 
-# Step 4: Cluster Faces to Identify Unique Influencers
+# Step 5: Cluster Faces to Identify Unique Influencers
 def cluster_faces(embeddings):
     clustering_model = DBSCAN(metric='euclidean', eps=0.5, min_samples=5)
     labels = clustering_model.fit_predict(embeddings)
     return labels
 
-# Step 5: Process Video URLs to Extract Unique Influencers
+# Step 6: Process Videos and Extract Unique Influencers
 def process_videos(video_urls):
     influencer_clusters = {}
     all_embeddings = []
@@ -73,7 +88,7 @@ def process_videos(video_urls):
 
     return influencer_clusters, video_to_clusters
 
-# Step 6: Calculate Performance Metrics for Each Influencer
+# Step 7: Calculate Performance Metrics for Each Influencer
 def calculate_influencer_performance(video_to_clusters, video_performance):
     influencer_performance = {}
     for video_url, clusters in video_to_clusters.items():
