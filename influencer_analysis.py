@@ -2,10 +2,9 @@ import cv2
 import face_recognition
 import numpy as np
 import pandas as pd
+import os
 from sklearn.cluster import DBSCAN
 from urllib.request import urlretrieve
-import os
-import matplotlib.pyplot as plt
 import uuid
 
 # Step 1: Download Video from URL
@@ -13,7 +12,8 @@ def download_video(video_url, output_dir="videos"):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     video_filename = os.path.join(output_dir, video_url.split("/")[-1])
-    urlretrieve(video_url, video_filename)
+    if not os.path.exists(video_filename):
+        urlretrieve(video_url, video_filename)
     return video_filename
 
 # Step 2: Extract Frames from Videos
@@ -30,70 +30,59 @@ def extract_frames(video_path, frame_rate=30):
     video.release()
     return frames
 
-# Step 3: Save Detected Faces to Directory
-def save_faces(frame, face_locations, output_dir="Plots", influencer_id=None, frame_number=None):
-    """Save faces detected in a frame to a specified directory with unique filenames."""
+# Step 3: Filter Small Faces
+def filter_small_faces(face_locations, min_size=50):
+    """Filter out faces with bounding boxes smaller than min_size."""
+    filtered_faces = []
+    for (top, right, bottom, left) in face_locations:
+        if (bottom - top) > min_size and (right - left) > min_size:
+            filtered_faces.append((top, right, bottom, left))
+    return filtered_faces
+
+# Step 4: Exclude Faces on Objects (Optional Advanced Step)
+def filter_faces_on_objects(frame, face_locations, object_classes=["photo frame", "keychain"]):
+    """
+    Exclude faces overlapping with objects (e.g., photo frames, keychains).
+    Requires a pre-trained object detection model.
+    """
+    # Placeholder: Replace with actual object detection logic
+    # detected_objects = detect_objects(frame)
+    # Assuming detected_objects = [{"class": "photo frame", "bbox": (top, right, bottom, left)}, ...]
+
+    # For simplicity, skip this step in implementation unless integrated with object detection.
+    return face_locations
+
+# Step 5: Detect and Save Valid Faces
+def detect_and_save_faces(frames, output_dir="Plots"):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    for idx, (top, right, bottom, left) in enumerate(face_locations):
-        face = frame[top:bottom, left:right]
-        # Generate a unique filename for each face
-        unique_id = uuid.uuid4().hex  # Unique identifier
-        filename = f"influencer_{influencer_id if influencer_id is not None else idx}_{frame_number}_{unique_id}.png"
-        filepath = os.path.join(output_dir, filename)
-        cv2.imwrite(filepath, cv2.cvtColor(face, cv2.COLOR_BGR2RGB))
-        print(f"Saved face to {filepath}")
-
-# Step 4: Detect Faces and Save Embeddings
-def detect_faces_and_embeddings(frames, output_dir="Plots"):
     embeddings = []
-    for frame in frames:
+    for frame_number, frame in enumerate(frames):
         face_locations = face_recognition.face_locations(frame)
-        face_encodings = face_recognition.face_encodings(frame, face_locations)
-        embeddings.extend(face_encodings)
-
-        # Save detected faces
-        save_faces(frame, face_locations, output_dir)
+        face_locations = filter_small_faces(face_locations)  # Filter out small faces
+        face_locations = filter_faces_on_objects(frame, face_locations)  # Exclude faces on objects
+        
+        for idx, (top, right, bottom, left) in enumerate(face_locations):
+            face = frame[top:bottom, left:right]
+            unique_id = uuid.uuid4().hex  # Generate a unique identifier
+            filename = f"influencer_face_{frame_number}_{unique_id}.png"
+            filepath = os.path.join(output_dir, filename)
+            cv2.imwrite(filepath, cv2.cvtColor(face, cv2.COLOR_BGR2RGB))  # Save face
+            print(f"Saved face to {filepath}")
+            
+            # Generate embeddings for clustering
+            face_encoding = face_recognition.face_encodings(frame, [(top, right, bottom, left)])[0]
+            embeddings.append(face_encoding)
     return embeddings
 
-# Step 5: Cluster Faces to Identify Unique Influencers
+# Step 6: Cluster Faces
 def cluster_faces(embeddings):
     clustering_model = DBSCAN(metric='euclidean', eps=0.5, min_samples=5)
     labels = clustering_model.fit_predict(embeddings)
     return labels
 
-# Step 6: Process Videos and Extract Unique Influencers
-def process_videos(video_urls):
-    influencer_clusters = {}
-    all_embeddings = []
-    video_to_clusters = {}
-
-    for idx, video_url in enumerate(video_urls):
-        print(f"Processing video {idx + 1}/{len(video_urls)}...")
-        video_path = download_video(video_url)
-        frames = extract_frames(video_path)
-        embeddings = detect_faces_and_embeddings(frames)
-
-        if embeddings:
-            all_embeddings.extend(embeddings)
-            video_to_clusters[video_url] = embeddings
-
-    # Cluster all embeddings to find unique influencers
-    print("Clustering embeddings to identify unique influencers...")
-    if all_embeddings:
-        all_embeddings = np.array(all_embeddings)
-        labels = cluster_faces(all_embeddings)
-
-        # Map video URLs to influencer clusters
-        for video_url, embeddings in video_to_clusters.items():
-            video_to_clusters[video_url] = [labels[i] for i in range(len(embeddings))]
-
-        influencer_clusters = labels
-
-    return influencer_clusters, video_to_clusters
-
-# Step 7: Calculate Performance Metrics for Each Influencer
+# Step 7: Calculate Performance Metrics for Influencers
 def calculate_influencer_performance(video_to_clusters, video_performance):
     influencer_performance = {}
     for video_url, clusters in video_to_clusters.items():
@@ -109,17 +98,38 @@ def calculate_influencer_performance(video_to_clusters, video_performance):
 
     return influencer_performance
 
-# Main Script to Process videos and extract unique influencers
+# Main Script
 if __name__ == "__main__":
     # Load video URLs and performance data
     data = pd.read_csv("dataset/data.csv")
     video_urls = data["Video URL"].tolist()
     video_performance = dict(zip(data["Video URL"], data["Performance"]))
 
-    # Process videos and extract influencer clusters
-    influencer_clusters, video_to_clusters = process_videos(video_urls)
+    all_embeddings = []
+    video_to_clusters = {}
 
-    # Calculate influencer performance metrics
+    # Process each video
+    for idx, video_url in enumerate(video_urls):
+        print(f"Processing video {idx + 1}/{len(video_urls)}...")
+        video_path = download_video(video_url)
+        frames = extract_frames(video_path)
+        embeddings = detect_and_save_faces(frames)
+
+        if embeddings:
+            all_embeddings.extend(embeddings)
+            video_to_clusters[video_url] = embeddings
+
+    # Cluster embeddings to find unique influencers
+    print("Clustering embeddings to identify unique influencers...")
+    if all_embeddings:
+        all_embeddings = np.array(all_embeddings)
+        labels = cluster_faces(all_embeddings)
+
+        # Map video URLs to influencer clusters
+        for video_url, embeddings in video_to_clusters.items():
+            video_to_clusters[video_url] = [labels[i] for i in range(len(embeddings))]
+
+    # Calculate influencer performance
     influencer_performance = calculate_influencer_performance(video_to_clusters, video_performance)
 
     # Display the results
